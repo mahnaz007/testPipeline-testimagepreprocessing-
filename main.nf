@@ -1,4 +1,24 @@
 #!/usr/bin/env nextflow
+nextflow.enable.dsl = 2
+
+include { DICOM_TO_BIDS } from './workflows/dicom_to_bids'
+
+workflow {
+    dicom_ch = Channel.fromPath(params.input)
+        .map { file -> 
+            def meta = [:]
+            meta.id = file.getParent().getName()
+            meta.session = 'ses-01' // Adjust as needed
+            [ meta, file ]
+        }
+    config_file = file(params.config_file)
+
+    DICOM_TO_BIDS ( dicom_ch, config_file )
+}
+
+
+
+#!/usr/bin/env nextflow
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     testPipeline/testimagepreprocessing
