@@ -1,0 +1,29 @@
+nextflow_process {
+
+ name "Test Process CONVERT_DICOM_TO_BIDS"
+ script "../modules/local/convert_dicom_to_bids.nf"
+ process "CONVERT_DICOM_TO_BIDS"
+
+ test("Should convert DICOM to BIDS") {
+
+     when {
+         params {
+             containerPath_dcm2bids = "docker://nipy/dcm2bids:latest"
+         }
+         process {
+             """
+             input[0] = [ [id:'sub-01', session:'ses-01'], file("$projectDir/assets/test_dicom") ]
+             input[1] = file("$projectDir/assets/config.json")
+             """
+         }
+     }
+
+     then {
+         assert process.success
+         assert path(process.out.bids_files[0]).exists()
+         assert snapshot(process.out.versions).match()
+     }
+
+ }
+
+}
