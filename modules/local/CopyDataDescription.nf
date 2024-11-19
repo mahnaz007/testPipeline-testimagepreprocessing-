@@ -1,21 +1,17 @@
 process CopyDatasetDescription {
-    // Tag process for easy tracking
-    tag "Copy dataset_description.json"
-    label 'process_copy'
+    tag 'Copy dataset_description.json'
 
     input:
     tuple path(bidsDir), path(datasetDescription)
 
-    // Output directory setup for BIDS output
     output:
-    path "${bidsDir}/bids_output", emit: bids_output
+    path "${bidsDir}/bids_output/dataset_description.json" 
+    path "${bidsDir}/dataset_description.json"
 
     script:
     """
-    # Create BIDS output directory if it doesn't exist
     mkdir -p ${bidsDir}/bids_output
-
-    # Copy dataset_description.json to the BIDS output directory
-    cp ${datasetDescription} ${bidsDir}/bids_output/dataset_description.json
+    cp ${datasetDescription} ${bidsDir}/bids_output/dataset_description.json #Copies inside the bids_output subdirectory. (Required for mriQC process)
+    cp ${datasetDescription} ${bidsDir}/dataset_description.json  #Copies to the root of the BIDS directory. (Required for fMRIPrep process)
     """
 }
