@@ -1,18 +1,26 @@
-#!/usr/bin/env nextflow
-nextflow.enable.dsl=2
+/*
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    IMPORT MODULES / SUBWORKFLOWS / FUNCTIONS
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+*/
 
-// Import local modules
-include { ConvertDicomToBIDS } from './modules/local/ConvertDicomToBIDS.nf'
-include { ValidateBIDS } from './modules/local/ValidateBIDS.nf'
-include { PyDeface } from './modules/local/PyDeface.nf'
-include { CopyDatasetDescription } from './modules/local/CopyDatasetDescription.nf'
-include { runMRIQC } from './modules/local/runMRIQC.nf'
-include { runFmriprep } from './modules/local/runFmriprep.nf'
+include { ConvertDicomToBIDS       } from '../modules/local/ConvertDicomToBIDS'
+include { ValidateBIDS            } from '../modules/local/ValidateBIDS'
+include { PyDeface                } from '../modules/local/PyDeface'
+include { CopyDatasetDescription  } from '../modules/local/CopyDatasetDescription'
+include { runMRIQC                } from '../modules/local/runMRIQC'
+include { runFmriprep             } from '../modules/local/runFmriprep'
 
-// Define workflow
+/*
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    RUN MAIN WORKFLOW
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+*/
+
 workflow {
-    // Step 1: Prepare DICOM directory channel
-    dicomDirChannel = Channel
+
+    // Initialize channels
+    ch_dicom_dirs = Channel
         .fromPath("${params.inputDir}/*", type: 'dir')
         .map { dir ->
             def folderName = dir.name
@@ -31,29 +39,55 @@ workflow {
         }
         .filter { it != null }
 
-    // Step 2: Convert DICOM to BIDS
-    bidsFiles = dicomDirChannel | ConvertDicomToBIDS
+    //
+    // MODULE: Convert DICOM to BIDS
+    //
+    ch_bids_files = ch_dicom_dirs | ConvertDicomToBIDS
 
-    // Step 3: Validate BIDS output
-    validateTrigger = bidsFiles.collect()
-    validateTrigger.map { true } | ValidateBIDS
+    //
+    // MODULE: Validate BIDS
+    //
+    ch_bids_validation = ch_bids_files.collect()
+    ch_bids_validation.map { true } | ValidateBIDS
 
-    // Step 4: Run PyDeface on NIfTI files
-    niiFiles = bidsFiles.flatMap { it }.filter { it.name.endsWith(".nii.gz") }
-    anatFiles = niiFiles.filter { it.toString().contains("/anat/") && "fslval ${it} dim4".execute().text.trim() == "1" }
-    defacedFiles = anatFiles | PyDeface
+    //
+    // MODULE: PyDeface
+    //
+    ch_nii_files = ch_bids_files
+        .flatMap { it }
+        .filter { it.name.endsWith(".nii.gz") } // NIfTI files only
+    ch_anat_files = ch_nii_files
+        .filter { it.toString().contains("/anat/") && "fslval ${it} dim4".execute().text.trim() == "1" } // Anatomical files
 
-    // Step 5: Copy dataset_description.json
-    bidsDirChannel = bidsFiles.map { file(params.bidsDir) }
-    descriptionChannel = Channel.of(file(params.datasetDescription))
-    bidsDirChannel.combine(descriptionChannel) | CopyDatasetDescription
+    ch_defaced_files = ch_anat_files | PyDeface
 
-    // Step 6: Run MRIQC
-    participantIDs = bidsFiles
+    //
+    // MODULE: Copy Dataset Description
+    //
+    ch_bids_dir_channel = ch_bids_files.map { file(params.bidsDir) }
+    ch_description_channel = Channel.of(file(params.datasetDescription))
+
+    ch_bids_dir_channel
+        .combine(ch_description_channel)
+        | CopyDatasetDescription
+
+    //
+    // MODULE: Run MRIQC
+    //
+    ch_participant_ids = ch_bids_files
         .map { bidsFile -> (bidsFile.name =~ /sub-(\d+)/)[0][1] }
         .distinct()
-    participantIDs | runMRIQC
 
-    // Step 7: Run fMRIPrep
-    participantIDs | runFmriprep
+    ch_participant_ids | runMRIQC
+
+    //
+    // MODULE: Run fMRIPrep
+    //
+    ch_participant_ids | runFmriprep
 }
+
+/*
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    THE END
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+*/
